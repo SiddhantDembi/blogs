@@ -1,0 +1,8 @@
+version: "3.9"
+services:
+  blogs:
+    image: blogs
+    ports:
+      - "5678:5678"
+    volumes:
+      - /home/sid/Projects/blogs/md:/app/md
