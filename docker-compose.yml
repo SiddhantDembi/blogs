@@ -1,8 +1,8 @@
 version: "3.9"
 services:
-  flask-app:
+  blogs:
     image: blogs
     ports:
       - "5678:5678"
     volumes:
-      - /path/to/host/md:/app/md
+      - /home/sid/Projects/blogs/md:/app/md
