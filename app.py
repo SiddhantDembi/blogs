@@ -246,7 +246,7 @@ def category_posts(category):
                 content += f"""
                     <li class='post-item'>
                         <a href="/{post['path']}">{name}</a>
-                        <div class='category'>{post['date'].strftime('%Y-%m-%d')}</div>
+                        <div class='category'>{post['date'].strftime('%d-%m-%Y')}</div>
                     </li>
                 """
             content += "</ul>"
@@ -278,7 +278,7 @@ def serve_post(filename):
         content = f"""
             <h1>{metadata.get('title', filename)}</h1>
             <div class='post-meta'>
-                <small>{metadata['date'].strftime('%B %d, %Y')}</small>
+                <small>{metadata['date'].strftime('%d %B, %Y')}</small>
             </div>
             {post_data['html']}
         """
