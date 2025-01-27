@@ -1,1 +1,8 @@
 paste all the md files in this folder
+
+---
+title: "My Awesome Post"
+date: 2023-01-15
+tags: [tech, programming]
+---
+# Start  from here
