@@ -17,17 +17,53 @@ class BlogConfig:
         "linkedin": "https://linkedin.com/in/siddhantdembi"
     }
     STYLES = """
-        body { font-family: Arial, sans-serif; line-height: 1.6; margin: 0; padding: 0; 
-               background-color: #f4f4f9; color: #333; padding-bottom: 40px; }
-        h1, h2, h3 { color: #555; }
-        a { color: #0066cc; text-decoration: none; }
-        a:hover { text-decoration: underline; }
-        .container { max-width: 800px; margin: 20px auto; background: #fff; 
-                    padding: 20px; border-radius: 8px; box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1); }
-        .navbar { background-color: #0066cc; color: white; padding: 10px 20px; 
-                 display: flex; align-items: center; justify-content: space-between; }
-        .navbar a { color: white; margin-right: 20px; font-weight: bold; }
-        .social-icons a { color: white; margin-left: 10px; font-size: 20px; }
+        body { 
+            font-family: Arial, sans-serif; 
+            line-height: 1.6; 
+            margin: 0; 
+            padding: 0; 
+            background-color: #f4f4f9; 
+            color: #333; 
+            padding-bottom: 60px; 
+        }
+        h1, h2, h3 { 
+            color: #0066cc; 
+            margin-top: 0; 
+        }
+        a { 
+            color: #0066cc; 
+            text-decoration: none; 
+        }
+        a:hover { 
+            text-decoration: underline; 
+        }
+        .container { 
+            max-width: 800px; 
+            margin: 20px auto; 
+            background: #fff; 
+            padding: 20px; 
+            border-radius: 8px; 
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1); 
+        }
+        .navbar { 
+            background-color: #0066cc; 
+            color: white; 
+            padding: 10px 20px; 
+            display: flex; 
+            align-items: center; 
+            justify-content: space-between; 
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1); 
+        }
+        .navbar a { 
+            color: white; 
+            margin-right: 20px; 
+            font-weight: bold; 
+        }
+        .social-icons a { 
+            color: white; 
+            margin-left: 10px; 
+            font-size: 20px; 
+        }
         footer { 
             background-color: #0066cc; 
             color: white; 
@@ -43,13 +79,46 @@ class BlogConfig:
             margin: 0; 
             font-weight: bold; 
         }
-        .post-list, .subcategory-list { padding-left: 20px; }
-        .post-item { margin: 5px 0; }
-        .category { color: #666; font-size: 0.9em; }
-        .breadcrumbs { padding: 10px 0; font-size: 0.9em; }
-        .breadcrumbs a { color: #666; }
-        .error { color: #cc0000; padding: 20px; }
-        .subcategory-list { list-style-type: circle; margin: 10px 0; }
+        .post-list, .subcategory-list { 
+            padding-left: 20px; 
+        }
+        .post-item { 
+            margin: 10px 0; 
+            padding: 10px; 
+            background: #f9f9f9; 
+            border-radius: 4px; 
+            border: 1px solid #ddd; 
+        }
+        .post-item:hover { 
+            background: #f1f1f1; 
+        }
+        .category { 
+            color: #666; 
+            font-size: 0.9em; 
+        }
+        .breadcrumbs { 
+            padding: 10px 0; 
+            font-size: 0.9em; 
+        }
+        .breadcrumbs a { 
+            color: #666; 
+        }
+        .error { 
+            color: #cc0000; 
+            padding: 20px; 
+            background: #ffe6e6; 
+            border-radius: 4px; 
+            border: 1px solid #ffcccc; 
+        }
+        .subcategory-list { 
+            list-style-type: circle; 
+            margin: 10px 0; 
+        }
+        .post-meta { 
+            color: #666; 
+            font-size: 0.9em; 
+            margin-bottom: 10px; 
+        }
     """
 
 class TemplateRenderer:
@@ -145,9 +214,20 @@ class BlogManager:
                         metadata = yaml.safe_load(parts[1]) or {}
                         content = parts[2]
                 
+                # Ensure the date is a datetime object
+                if 'date' in metadata:
+                    if isinstance(metadata['date'], str):
+                        try:
+                            metadata['date'] = datetime.strptime(metadata['date'], '%Y-%m-%d')
+                        except ValueError:
+                            metadata['date'] = datetime.fromtimestamp(os.path.getctime(file_path))
+                    elif not isinstance(metadata['date'], datetime):
+                        metadata['date'] = datetime.fromtimestamp(os.path.getctime(file_path))
+                else:
+                    metadata['date'] = datetime.fromtimestamp(os.path.getctime(file_path))
+                
                 # Default metadata
                 metadata.setdefault('title', filename.split('/')[-1])
-                metadata.setdefault('date', datetime.fromtimestamp(os.path.getctime(file_path)))
                 
                 return {
                     'html': markdown.markdown(content),
@@ -278,7 +358,7 @@ def serve_post(filename):
         content = f"""
             <h1>{metadata.get('title', filename)}</h1>
             <div class='post-meta'>
-                <small>{metadata['date'].strftime('%d %B %Y')}</small>
+                <small>{metadata['date'].strftime('%d-%m-%Y')}</small>
             </div>
             {post_data['html']}
         """
