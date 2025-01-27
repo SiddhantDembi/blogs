@@ -278,7 +278,7 @@ def serve_post(filename):
         content = f"""
             <h1>{metadata.get('title', filename)}</h1>
             <div class='post-meta'>
-                <small>{metadata['date'].strftime('%d %B, %Y')}</small>
+                <small>{metadata['date'].strftime('%d %B %Y')}</small>
             </div>
             {post_data['html']}
         """
