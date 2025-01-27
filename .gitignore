@@ -1,2 +1,4 @@
 venv
-md/*.md
+/md/*
+!/md/instructions.txt
+
