@@ -1,10 +1,11 @@
-from flask import Flask, render_template_string, abort, request
+from flask import Flask, render_template_string, abort, request, url_for
 import os
 import markdown
 from functools import lru_cache
-from datetime import datetime
 import yaml
 import logging
+import re
+from bs4 import BeautifulSoup
 
 class BlogConfig:
     """Configuration settings for the blog"""
@@ -114,11 +115,6 @@ class BlogConfig:
             list-style-type: circle; 
             margin: 10px 0; 
         }
-        .post-meta { 
-            color: #666; 
-            font-size: 0.9em; 
-            margin-bottom: 10px; 
-        }
     """
 
 class TemplateRenderer:
@@ -136,6 +132,10 @@ class TemplateRenderer:
     <body>
         <div class="navbar">
             <a href="/">Home</a>
+            <form action="/search" method="GET" style="flex-grow: 1; margin: 0 20px;">
+                <input type="text" name="q" placeholder="Search posts..." 
+                    value="{{ request.args.get('q', '') }}" style="width: 100%; padding: 8px;">
+            </form>
             <div class="social-icons">
                 <a href="{{ social_links.github }}" target="_blank" title="GitHub">
                     <i class="fab fa-github"></i>
@@ -148,6 +148,7 @@ class TemplateRenderer:
         <div class="container">
             {% if breadcrumbs %}
             <div class="breadcrumbs">
+                <a href="/">Home</a> /
                 {% for part in breadcrumbs %}
                     {% if not loop.last %}
                         <a href="{{ part.url }}">{{ part.name }}</a> /
@@ -162,6 +163,9 @@ class TemplateRenderer:
                 <div class="error">
                     <h2>{{ error.title }}</h2>
                     <p>{{ error.description }}</p>
+                    <div class="error-actions">
+                        <a href="/">Return Home</a>
+                    </div>
                 </div>
             {% else %}
                 {{ content|safe }}
@@ -184,7 +188,8 @@ class TemplateRenderer:
             social_links=BlogConfig.SOCIAL_LINKS,
             content=content,
             breadcrumbs=breadcrumbs,
-            error=error
+            error=error,
+            request=request
         )
 
 class BlogManager:
@@ -196,6 +201,9 @@ class BlogManager:
     @lru_cache(maxsize=128)
     def get_post(self, filename):
         """Retrieve and convert a markdown post with metadata"""
+        if not is_safe_path(filename):
+            return None
+
         parts = filename.split('/')
         file_path = os.path.join(self.md_folder, *parts) + '.md'
         
@@ -211,26 +219,22 @@ class BlogManager:
                 if content.startswith('---\n'):
                     parts = content.split('---\n', 2)
                     if len(parts) > 2:
-                        metadata = yaml.safe_load(parts[1]) or {}
-                        content = parts[2]
-                
-                # Ensure the date is a datetime object
-                if 'date' in metadata:
-                    if isinstance(metadata['date'], str):
                         try:
-                            metadata['date'] = datetime.strptime(metadata['date'], '%Y-%m-%d')
-                        except ValueError:
-                            metadata['date'] = datetime.fromtimestamp(os.path.getctime(file_path))
-                    elif not isinstance(metadata['date'], datetime):
-                        metadata['date'] = datetime.fromtimestamp(os.path.getctime(file_path))
-                else:
-                    metadata['date'] = datetime.fromtimestamp(os.path.getctime(file_path))
+                            metadata = yaml.safe_load(parts[1]) or {}
+                        except yaml.YAMLError as e:
+                            logging.error(f"YAML parsing error in {filename}: {str(e)}")
+                            metadata = {}
+                        content = parts[2]
                 
                 # Default metadata
                 metadata.setdefault('title', filename.split('/')[-1])
                 
+                # Sanitize HTML content
+                html_content = markdown.markdown(content)
+                sanitized_html = sanitize_html(html_content)
+                
                 return {
-                    'html': markdown.markdown(content),
+                    'html': sanitized_html,
                     'metadata': metadata
                 }
         except Exception as e:
@@ -239,7 +243,7 @@ class BlogManager:
 
     @lru_cache(maxsize=128)
     def list_posts(self):
-        """List all available blog posts with metadata, sorted by date"""
+        """List all available blog posts"""
         posts = []
         for root, dirs, files in os.walk(self.md_folder):
             for file in files:
@@ -250,23 +254,28 @@ class BlogManager:
                     
                     relative_path = os.path.relpath(full_path, self.md_folder)
                     post_name = relative_path[:-3].replace("\\", "/")
-                    
-                    # Get creation date for sorting
-                    stat = os.stat(full_path)
-                    posts.append({
-                        'path': post_name,
-                        'date': datetime.fromtimestamp(stat.st_ctime)
-                    })
+                    posts.append({'path': post_name})
         
-        # Sort by date descending, then by path
-        return sorted(posts, 
-                     key=lambda x: (-x['date'].timestamp(), x['path'].lower()))
+        # Sort alphabetically by path
+        return sorted(posts, key=lambda x: x['path'].lower())
 
 # Initialize application components
 app = Flask(__name__)
 config = BlogConfig()
 blog_manager = BlogManager(config.MD_FOLDER)
 app.logger.setLevel(logging.DEBUG if config.DEBUG else logging.ERROR)
+
+def is_safe_path(path):
+    """Check if the path is safe and does not contain directory traversal attempts"""
+    return re.match(r'^[a-zA-Z0-9_\-/]+$', path) is not None
+
+def sanitize_html(html):
+    """Sanitize HTML content to prevent XSS attacks"""
+    soup = BeautifulSoup(html, 'html.parser')
+    for tag in soup.find_all():
+        if tag.name in ['script', 'iframe', 'style']:
+            tag.decompose()
+    return str(soup)
 
 @app.before_request
 def before_request():
@@ -283,19 +292,69 @@ def generate_breadcrumbs(path):
     for i, part in enumerate(parts):
         accumulated.append(part)
         breadcrumbs.append({
-            'name': part,
+            'name': part.replace('-', ' ').capitalize(),
             'url': '/category/' + '/'.join(accumulated) if i < len(parts)-1 else f"/{'/'.join(accumulated)}"
         })
     return breadcrumbs
+
+@app.route("/search")
+def search_posts():
+    """Handle post search functionality"""
+    query = request.args.get("q", "").lower()
+    if not query or len(query) > 100:
+        abort(400, description="Invalid search query")
+    
+    posts = blog_manager.list_posts()
+    results = []
+    
+    for post in posts:
+        post_data = blog_manager.get_post(post['path'])
+        if not post_data:
+            continue
+            
+        metadata = post_data['metadata']
+        content = post_data['html'].lower()
+        title = metadata.get('title', '').lower()
+        path = post['path'].lower()
+        
+        if query in title or query in content or query in path:
+            results.append({
+                'path': post['path'],
+                'title': metadata.get('title', post['path'].split('/')[-1]),
+                'excerpt': content[:200] + '...' if len(content) > 200 else content
+            })
+    
+    content = "<h1>Search Results</h1>"
+    if results:
+        content += f'<p>Found {len(results)} matches for "{query}"</p>'
+        content += "<ul class='post-list'>"
+        for result in results:
+            content += f"""
+                <li class='post-item'>
+                    <a href="/{result['path']}">{result['title']}</a>
+                    <p>{result['excerpt']}</p>
+                </li>
+            """
+        content += "</ul>"
+    else:
+        content += f'<div class="error"><p>No results found for "{query}"</p></div>'
+    
+    return TemplateRenderer.render_page(
+        title=f"Search: {query}",
+        content=content
+    )
 
 @app.route("/category/<path:category>")
 def category_posts(category):
     """Show posts in a specific category"""
     try:
+        if not is_safe_path(category):
+            abort(404)
+        
         all_posts = blog_manager.list_posts()
         filtered_posts = [p for p in all_posts if p['path'].startswith(f"{category}/")]
         
-        subcategories = set()
+        subcategories = {}
         immediate_posts = []
         
         for post in filtered_posts:
@@ -304,35 +363,42 @@ def category_posts(category):
             
             if '/' in remaining_path:
                 subcategory = remaining_path.split('/')[0]
-                subcategories.add(f"{category}/{subcategory}")
+                subcat_path = f"{category}/{subcategory}"
+                if subcat_path not in subcategories:
+                    subcategories[subcat_path] = 1
+                else:
+                    subcategories[subcat_path] += 1
             else:
                 immediate_posts.append(post)
         
-        content = f"<h1>{category}</h1>"
+        content = f"<h1>{category.replace('-', ' ').capitalize()}</h1>"
         
-        # Display subcategories
         if subcategories:
             content += "<h2>Subcategories</h2><ul class='subcategory-list'>"
-            for sub in sorted(subcategories):
-                sub_name = sub.split('/')[-1]
-                content += f"<li><a href='/category/{sub}'>{sub_name.capitalize()}</a></li>"
+            for sub, count in sorted(subcategories.items()):
+                sub_name = sub.split('/')[-1].replace('-', ' ').capitalize()
+                content += f"""
+                    <li class='post-item'>
+                        <a href='/category/{sub}'>{sub_name}</a>
+                        <span class='category'>({count} post{'s' if count != 1 else ''})</span>
+                    </li>
+                """
             content += "</ul>"
         
-        # Display immediate posts
         if immediate_posts:
             content += "<h2>Posts</h2><ul class='post-list'>"
             for post in immediate_posts:
-                name = post['path'].split('/')[-1]
+                post_data = blog_manager.get_post(post['path'])
+                title = post_data['metadata'].get('title', post['path'].split('/')[-1])
                 content += f"""
                     <li class='post-item'>
-                        <a href="/{post['path']}">{name}</a>
-                        <div class='category'>{post['date'].strftime('%d-%m-%Y')}</div>
+                        <a href="/{post['path']}">{title}</a>
                     </li>
                 """
             content += "</ul>"
         
         return TemplateRenderer.render_page(
-            title=f"Category: {category}",
+            title=f"Category: {category.replace('-', ' ').capitalize()}",
             content=content,
             breadcrumbs=generate_breadcrumbs(category)
         )
@@ -348,6 +414,9 @@ def category_posts(category):
 def serve_post(filename):
     """Serve individual blog post"""
     try:
+        if not is_safe_path(filename):
+            abort(404)
+        
         post_data = blog_manager.get_post(filename)
         if not post_data:
             abort(404)
@@ -355,13 +424,8 @@ def serve_post(filename):
         metadata = post_data['metadata']
         breadcrumbs = generate_breadcrumbs(filename)
         
-        content = f"""
-            <h1>{metadata.get('title', filename)}</h1>
-            <div class='post-meta'>
-                <small>{metadata['date'].strftime('%d-%m-%Y')}</small>
-            </div>
-            {post_data['html']}
-        """
+        content = f"<h1>{metadata.get('title', filename)}</h1>"
+        content += post_data['html']
         
         return TemplateRenderer.render_page(
             title=metadata.get('title', filename),
@@ -399,18 +463,18 @@ def home():
         content = "<h1>Blog Posts</h1>"
         for category_name, posts_in_category in sorted(categories.items()):
             if category_name != '_root':
-                content += f"<h2><a href='/category/{category_name}'>{category_name.capitalize()}</a></h2>"
+                content += f"<h2><a href='/category/{category_name}'>{category_name.replace('-', ' ').capitalize()}</a></h2>"
             else:
                 content += "<h2>Uncategorized</h2>"
             
             content += "<ul class='post-list'>"
             for post in posts_in_category:
                 if len(post['path'].split('/')) == 1 or category_name == '_root':
-                    name = post['path'].split('/')[-1]
+                    post_data = blog_manager.get_post(post['path'])
+                    title = post_data['metadata'].get('title', post['path'].split('/')[-1])
                     content += f"""
                         <li class='post-item'>
-                            <a href="/{post['path']}">{name}</a>
-                            <div class='category'>{post['date'].strftime('%d-%m-%Y')}</div>
+                            <a href="/{post['path']}">{title}</a>
                         </li>
                     """
             content += "</ul>"
