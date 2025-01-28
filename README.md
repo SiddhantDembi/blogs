@@ -36,8 +36,22 @@ This Blogs Application, is a dynamic blogging platform built using Docker and Py
 ## Project Structure
 
 - **/md**: This folder contains all your markdown files categorized into subfolders.
-  Each file should follow this format at the top:
 
+   ```yaml
+   blogs/
+   ├── md/
+   │   ├── category1/
+   │   │   ├── 1.md
+   │   │   └── 2.md
+   │   ├── category2/
+   │   │   └── 1.md
+   ├── app.py
+   ├── docker-compose.yml
+   ├── Dockerfile
+   ├── README.md
+   └── requirements.txt
+   ```
+- **Markdown Template**: Markdown file should follow the exact template as follows:
   ```yaml
   ---
   title: "Write-The-Title"
