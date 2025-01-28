@@ -144,8 +144,10 @@ class TemplateRenderer:
         <meta charset="UTF-8">
         <meta name="viewport" content="width=device-width, initial-scale=1.0">
         <title>{{ title }}</title>
-        <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css">
-        <style>{{ styles }}</style>
+<link rel="icon" href="https://www.freeiconspng.com/uploads/notepad-icon-2.png">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css">
+<style>{{ styles }}</style>
+
     </head>
     <body>
         <div class="navbar">
@@ -588,7 +590,7 @@ def home():
             content += "</ul>"
         
         return TemplateRenderer.render_page(
-            title="Blog Home",
+            title="Blogs",
             content=content
         )
     except Exception as e:

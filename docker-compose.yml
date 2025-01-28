@@ -1,40 +1,42 @@
 name: blogs
 services:
-    blogs:
-        cpu_shares: 90
-        command: []
-        container_name: blogs
-        deploy:
-            resources:
-                limits:
-                    memory: "8438939648"
-        image: blogs:latest
-        labels:
-            icon: https://png.pngtree.com/png-vector/20230304/ourmid/pngtree-colorful-blog-speech-bubble-vector-png-image_6633021.png
-        network_mode: bridge
-        ports:
-            - mode: ingress
-              target: 5678
-              published: "5678"
-              protocol: tcp
-        restart: unless-stopped
-        volumes:
-            - type: bind
-              source: /media/external/Sid/blogs
-              target: /app/md
-              bind:
-                create_host_path: true
-networks:
-    default:
-        name: blogs_default
+  blogs:
+    cpu_shares: 90
+    command: []
+    container_name: blogs
+    deploy:
+      resources:
+        limits:
+          memory: 8048M
+    hostname: blogs
+    image: blogs:latest
+    labels:
+      icon: https://www.freeiconspng.com/uploads/notepad-icon-2.png
+    ports:
+      - mode: ingress
+        target: 5678
+        published: "5678"
+        protocol: tcp
+    restart: unless-stopped
+    volumes:
+      - type: bind
+        source: /media/external/Sid/blogs
+        target: /app/md
+        bind:
+          create_host_path: true
+    devices: []
+    cap_add: []
+    environment: []
+    network_mode: bridge
+    privileged: false
 x-casaos:
-    author: self
-    category: self
-    hostname: ""
-    icon: https://png.pngtree.com/png-vector/20230304/ourmid/pngtree-colorful-blog-speech-bubble-vector-png-image_6633021.png
-    index: /
-    is_uncontrolled: false
-    port_map: "5678"
-    scheme: http
-    title:
-        custom: 'Blogs '
+  author: self
+  category: self
+  hostname: ""
+  icon: https://www.freeiconspng.com/uploads/notepad-icon-2.png
+  index: /
+  is_uncontrolled: false
+  port_map: "5678"
+  scheme: http
+  title:
+    custom: "Blogs "
