@@ -6,6 +6,7 @@ import yaml
 import logging
 import re
 from bs4 import BeautifulSoup
+from datetime import datetime  # Added import
 
 class BlogConfig:
     """Configuration settings for the blog"""
@@ -114,6 +115,23 @@ class BlogConfig:
         .subcategory-list { 
             list-style-type: circle; 
             margin: 10px 0; 
+        }
+        .post-meta { 
+            color: #666; 
+            font-size: 0.9em; 
+            margin-top: -0.5em; 
+            margin-bottom: 1em; 
+        }
+        .post-date {
+            color: #666;
+            font-size: 0.9em;
+            margin-left: 20px;
+        }
+        .post-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            width: 100%;
         }
     """
 
@@ -292,15 +310,15 @@ def generate_breadcrumbs(path):
     for i, part in enumerate(parts):
         accumulated.append(part)
         breadcrumbs.append({
-            'name': part.replace('-', ' ').capitalize(),
+            'name': ' '.join([p.capitalize() for p in part.split('-')]),
             'url': '/category/' + '/'.join(accumulated) if i < len(parts)-1 else f"/{'/'.join(accumulated)}"
         })
     return breadcrumbs
 
 @app.route("/search")
 def search_posts():
-    """Handle post search functionality"""
-    query = request.args.get("q", "").lower()
+    """Handle post search functionality with case insensitivity and proper excerpt casing"""
+    query = request.args.get("q", "").lower().strip()
     if not query or len(query) > 100:
         abort(400, description="Invalid search query")
     
@@ -313,15 +331,29 @@ def search_posts():
             continue
             
         metadata = post_data['metadata']
-        content = post_data['html'].lower()
+        content_html = post_data['html']
+        soup = BeautifulSoup(content_html, 'html.parser')
+        content_original = soup.get_text()
+        content_lower = content_original.lower()  # Lowercase version for search
         title = metadata.get('title', '').lower()
+        date = metadata.get('date', '').lower()
+        author = metadata.get('author', '').lower()  # Fixed typo: 'auther' -> 'author'
         path = post['path'].lower()
         
-        if query in title or query in content or query in path:
+        if (query in title or 
+            query in content_lower or  # Search in lowercase content
+            query in path or 
+            query in date or 
+            query in author):
+            
+            # Use original content for proper casing in excerpt
+            excerpt = content_original[:200] + '...' if len(content_original) > 200 else content_original
             results.append({
                 'path': post['path'],
                 'title': metadata.get('title', post['path'].split('/')[-1]),
-                'excerpt': content[:200] + '...' if len(content) > 200 else content
+                'excerpt': excerpt,
+                'date': metadata.get('date', ''),
+                'author': metadata.get('author', '')  # Fixed typo here
             })
     
     content = "<h1>Search Results</h1>"
@@ -332,6 +364,7 @@ def search_posts():
             content += f"""
                 <li class='post-item'>
                     <a href="/{result['path']}">{result['title']}</a>
+                    <p class='post-meta'>Posted on {result['date']} by {result['author']}</p>
                     <p>{result['excerpt']}</p>
                 </li>
             """
@@ -371,34 +404,64 @@ def category_posts(category):
             else:
                 immediate_posts.append(post)
         
-        content = f"<h1>{category.replace('-', ' ').capitalize()}</h1>"
+        # Process posts with dates
+        posts_with_dates = []
+        for post in immediate_posts:
+            post_data = blog_manager.get_post(post['path'])
+            if not post_data: continue
+            metadata = post_data['metadata']
+            date_str = metadata.get('date', '')
+            date_obj = None
+            if date_str:
+                try:
+                    day, month, year = map(int, date_str.split('-'))
+                    date_obj = datetime(year, month, day)
+                except: pass
+            posts_with_dates.append({
+                'post': post,
+                'title': metadata.get('title', post['path'].split('/')[-1]),
+                'date_str': date_str,
+                'date_obj': date_obj
+            })
+        
+        # Sort by date descending
+        posts_with_dates.sort(
+            key=lambda x: (x['date_obj'] is None, x['date_obj'] or datetime.min),
+            reverse=True
+        )
+        
+        # Generate display name for category
+        display_category = ' '.join([part.capitalize() for part in category.split('-')])
+        content = f"<h1>{display_category}</h1>"
         
         if subcategories:
             content += "<h2>Subcategories</h2><ul class='subcategory-list'>"
             for sub, count in sorted(subcategories.items()):
-                sub_name = sub.split('/')[-1].replace('-', ' ').capitalize()
+                sub_parts = sub.split('/')
+                sub_display = ' '.join([p.capitalize() for p in sub_parts[-1].split('-')])
                 content += f"""
                     <li class='post-item'>
-                        <a href='/category/{sub}'>{sub_name}</a>
+                        <a href='/category/{sub}'>{sub_display}</a>
                         <span class='category'>({count} post{'s' if count != 1 else ''})</span>
                     </li>
                 """
             content += "</ul>"
         
-        if immediate_posts:
+        if posts_with_dates:
             content += "<h2>Posts</h2><ul class='post-list'>"
-            for post in immediate_posts:
-                post_data = blog_manager.get_post(post['path'])
-                title = post_data['metadata'].get('title', post['path'].split('/')[-1])
+            for item in posts_with_dates:
                 content += f"""
                     <li class='post-item'>
-                        <a href="/{post['path']}">{title}</a>
+                        <div class="post-header">
+                            <a href="/{item['post']['path']}">{item['title']}</a>
+                            {f"<span class='post-date'>{item['date_str']}</span>" if item['date_str'] else ""}
+                        </div>
                     </li>
                 """
             content += "</ul>"
         
         return TemplateRenderer.render_page(
-            title=f"Category: {category.replace('-', ' ').capitalize()}",
+            title=f"Category: {display_category}",
             content=content,
             breadcrumbs=generate_breadcrumbs(category)
         )
@@ -425,6 +488,22 @@ def serve_post(filename):
         breadcrumbs = generate_breadcrumbs(filename)
         
         content = f"<h1>{metadata.get('title', filename)}</h1>"
+        
+        # Add date and author
+        date = metadata.get('date', '')
+        author = metadata.get('auther', '')
+        if date or author:
+            content += f"<p class='post-meta'>"
+            if date:
+                content += f"Posted on {date}"
+            if author:
+                if date:
+                    content += " by "
+                else:
+                    content += "By "
+                content += author
+            content += "</p>"
+        
         content += post_data['html']
         
         return TemplateRenderer.render_page(
@@ -460,23 +539,52 @@ def home():
             categories[category].append(post)
         
         # Generate content
-        content = "<h1>Blog Posts</h1>"
+        content = "<h1>Home</h1><hr style='margin-top: -20px; margin-bottom: 20px; border: 2px solid #000;'>"  # Updated <hr> tag
         for category_name, posts_in_category in sorted(categories.items()):
-            if category_name != '_root':
-                content += f"<h2><a href='/category/{category_name}'>{category_name.replace('-', ' ').capitalize()}</a></h2>"
+            # Generate display name for category
+            if category_name == '_root':
+                display_name = "Uncategorized"
             else:
-                content += "<h2>Uncategorized</h2>"
+                display_name = ' '.join([part.capitalize() for part in category_name.split('-')])
+            
+            content += f"<h2><a href='/category/{category_name}'>{display_name}</a></h2>"
+            
+            # Sort posts by date (newest first)
+            dated_posts = []
+            for post in posts_in_category:
+                post_data = blog_manager.get_post(post['path'])
+                if not post_data: continue
+                metadata = post_data['metadata']
+                date_str = metadata.get('date', '')
+                date_obj = None
+                if date_str:
+                    try:
+                        day, month, year = map(int, date_str.split('-'))
+                        date_obj = datetime(year, month, day)
+                    except: pass
+                dated_posts.append({
+                    'post': post,
+                    'title': metadata.get('title', post['path'].split('/')[-1]),
+                    'date_str': date_str,
+                    'date_obj': date_obj
+                })
+            
+            # Sort by date descending
+            dated_posts.sort(
+                key=lambda x: (x['date_obj'] is None, x['date_obj'] or datetime.min),
+                reverse=True
+            )
             
             content += "<ul class='post-list'>"
-            for post in posts_in_category:
-                if len(post['path'].split('/')) == 1 or category_name == '_root':
-                    post_data = blog_manager.get_post(post['path'])
-                    title = post_data['metadata'].get('title', post['path'].split('/')[-1])
-                    content += f"""
-                        <li class='post-item'>
-                            <a href="/{post['path']}">{title}</a>
-                        </li>
-                    """
+            for item in dated_posts:
+                content += f"""
+                    <li class='post-item'>
+                        <div class="post-header">
+                            <a href="/{item['post']['path']}">{item['title']}</a>
+                            {f"<span class='post-date'>{item['date_str']}</span>" if item['date_str'] else ""}
+                        </div>
+                    </li>
+                """
             content += "</ul>"
         
         return TemplateRenderer.render_page(
