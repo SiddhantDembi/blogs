@@ -20,7 +20,7 @@ services:
         restart: unless-stopped
         volumes:
             - type: bind
-              source: /home/sid/Projects/blogs/md
+              source: /media/external/Sid/blogs
               target: /app/md
               bind:
                 create_host_path: true
