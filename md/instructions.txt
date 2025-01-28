@@ -1,0 +1,10 @@
+Store all your markdown files in this /md folder. 
+Categorize them into folders of your choice.
+Each md file should follow the foollowing format:
+---
+title: "Write-The Title"
+date: "28-01-2025"
+auther: "Name"
+---
+# Start Here
+This is an example.
